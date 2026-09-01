@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState,useRef } from 'react';
 import { Scatter } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -11,7 +11,6 @@ import {
   Legend,
   Title
 } from 'chart.js';
-import { PCA } from 'ml-pca'; // 追加: リアルなPCA計算ライブラリ
 
 ChartJS.register(LinearScale, PointElement, LineElement, Tooltip, Legend, Title);
 
@@ -51,6 +50,74 @@ const VARIABLES = [
   { id: 'q15', label: '心理的ストレス: 人間関係やタスクの重圧がなく、精神的にクリアな状態を保てているか？', category: 'Mental' },
 ];
 
+const CATEGORY_IDS = [
+  'Physical',
+  'Intellectual',
+  'Production',
+  'Social',
+  'Mental'
+] as const;
+
+type CategoryId = typeof CATEGORY_IDS[number];
+
+function calculateCategoryScores(
+  scores: Record<string, number>
+): Record<CategoryId, number> {
+  const result = {
+    Physical: 0,
+    Intellectual: 0,
+    Production: 0,
+    Social: 0,
+    Mental: 0,
+  };
+
+  const counts = {
+    Physical: 0,
+    Intellectual: 0,
+    Production: 0,
+    Social: 0,
+    Mental: 0,
+  };
+
+  for (const v of VARIABLES) {
+    result[v.category as CategoryId] += scores[v.id];
+    counts[v.category as CategoryId]++;
+  }
+
+  for (const category of CATEGORY_IDS) {
+    result[category] /= counts[category];
+  }
+
+  return result;
+}
+
+function calculateCoordinates(
+  categoryScores: Record<CategoryId, number>
+) {
+  const {
+    Physical,
+    Intellectual,
+    Production,
+    Social,
+    Mental
+  } = categoryScores;
+
+  const x =
+    -0.3 * Physical
+    -0.3 * Intellectual
+    -0.2 * Mental
+    +0.6 * Social
+    +0.2 * Production;
+
+  const y =
+    -0.5 * Intellectual
+    -0.4 * Mental
+    +0.4 * Physical
+    +0.5 * Production;
+
+  return { x, y };
+}
+
 // ▼ 追加: アクションに応じたおすすめ商品データ
 const AFFILIATE_LINKS: Record<string, { title: string, description: string, url: string }> = {
   '食事・栄養': {
@@ -77,63 +144,6 @@ interface VariableImpact {
   impact: number;
 }
 
-// --- 2. Synthetic Population Data Generator (Updated: 1000件の相関データ) ---
-const generatePopulationData = () => {
-  const data = [];
-  const TOTAL_SAMPLES = 1000;
-
-  // 正規分布に従う乱数生成（ボックス・ミュラー法）
-  const randNormal = (mean = 50, stdDev = 15) => {
-    const u = 1 - Math.random();
-    const v = Math.random();
-    const z = Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
-    let val = z * stdDev + mean;
-    return Math.max(0, Math.min(100, val)); // 0~100に収める
-  };
-
-  for (let i = 0; i < TOTAL_SAMPLES; i++) {
-    // 3つのペルソナ（隠れクラスター）をランダムに割り当て
-    const persona = Math.random();
-    let row = {};
-
-    if (persona < 0.33) {
-      // 🔵 クラスター1：【抽象・システム解析特化】
-      // 期待値計算、プログラミング、複雑系の解読などのスコアが高い層
-      row = {
-        q1: randNormal(50), q2: randNormal(40), q3: randNormal(50),
-        q4: randNormal(80), q5: randNormal(85), q6: randNormal(70),
-        q7: randNormal(40), q8: randNormal(50), q9: randNormal(40),
-        q10: randNormal(40), q11: randNormal(30), q12: randNormal(50),
-        q13: randNormal(90), q14: randNormal(60), q15: randNormal(50)
-      };
-    } else if (persona < 0.66) {
-      // 🟡 クラスター2：【物理・長期生産特化】
-      // 植物の栽培や機材の自作など、長期的で手触りのある物理環境への介入が高い層
-      row = {
-        q1: randNormal(70), q2: randNormal(75), q3: randNormal(60),
-        q4: randNormal(30), q5: randNormal(50), q6: randNormal(40),
-        q7: randNormal(85), q8: randNormal(80), q9: randNormal(90),
-        q10: randNormal(50), q11: randNormal(40), q12: randNormal(40),
-        q13: randNormal(50), q14: randNormal(60), q15: randNormal(70)
-      };
-    } else {
-      // 🟣 クラスター3：【コミュニティ・社会資本特化】
-      // 組織運営や他者へのノウハウ共有、人間関係の構築スコアが高い層
-      row = {
-        q1: randNormal(50), q2: randNormal(50), q3: randNormal(50),
-        q4: randNormal(40), q5: randNormal(40), q6: randNormal(60),
-        q7: randNormal(40), q8: randNormal(30), q9: randNormal(50),
-        q10: randNormal(85), q11: randNormal(80), q12: randNormal(85),
-        q13: randNormal(40), q14: randNormal(50), q15: randNormal(60)
-      };
-    }
-
-    // VARIABLESの順番に合わせて配列化
-    data.push(VARIABLES.map(v => row[v.id as keyof typeof row]));
-  }
-  return data;
-};
-
 export default function LifeOptimizationApp() {
   const [scores, setScores] = useState<Record<string, number>>(
     VARIABLES.reduce((acc, v) => ({ ...acc, [v.id]: 50 }), {} as Record<string, number>)
@@ -142,127 +152,130 @@ export default function LifeOptimizationApp() {
   const [gradient, setGradient] = useState<VariableImpact[]>([]);
   const [aiAdvice, setAiAdvice] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [axisLabels, setAxisLabels] = useState({ 
-    xMinus: '解析中...', xPlus: '解析中...', 
-    yMinus: '解析中...', yPlus: '解析中...' 
+  const [axisLabels] = useState({ 
+    xMinus: '個人資本', xPlus: '社会資本', 
+    yMinus: '思考', yPlus: '実行' 
   });
-  const [pcaResult, setPcaResult] = useState({ pc1: 0, pc2: 0, action: '', targetX: 0, targetY: 0 });
+  const [mapResult, setMapResult] = useState({
+  x: 0,
+  y: 0,
+  action: '',
+  targetX: 0,
+  targetY: 0,
+});
   const chartRef = useRef<any>(null);
   const [selectedGoal, setSelectedGoal] = useState<string>('Balance');
-
-  // 母集団データからPCAモデルを初回のみ構築
-  const pcaModel = useMemo(() => {
-    const dataset = generatePopulationData();
-    // データをセンタリング＆スケーリング（標準化）してPCAを実行
-    return new PCA(dataset, { scale: true, center: true });
-  }, []);
 
   const handleSliderChange = (id: string, value: string) => {
     setScores(prev => ({ ...prev, [id]: parseInt(value) }));
   };
 
   const calculateOptimization = async () => {
-    // 1. 現在地の計算
-    const userVectorArray = VARIABLES.map(v => scores[v.id]);
-    const projectedCurrent = pcaModel.predict([userVectorArray]).to2DArray()[0];
-    const pc1 = projectedCurrent[0];
-    const pc2 = projectedCurrent[1];
-
-    // --- ▼ 変更: 選択肢に基づく「目標ベクトル」の生成と射影 ---
-    let goalVectorArray = [...userVectorArray];
-    
-    if (selectedGoal === 'Balance') {
-      // バランス型: 全てのスコアを100に近づける理想状態
-      goalVectorArray = VARIABLES.map(() => 100);
-    } else {
-      // 特化型: 選択したカテゴリーの項目だけを100にし、他は現状維持
-      goalVectorArray = VARIABLES.map(v => v.category === selectedGoal ? 100 : scores[v.id]);
-    }
-
-    // 理想の15次元ベクトルをPCA空間に射影して、2次元の目標座標を取得
-    const projectedGoal = pcaModel.predict([goalVectorArray]).to2DArray()[0];
-    const targetX = projectedGoal[0];
-    const targetY = projectedGoal[1];
-
-    // 現在地から目標地点への方向（目的関数）
-    const directionX = targetX - pc1;
-    const directionY = targetY - pc2;
-
-    const loadingsMatrix = pcaModel.getLoadings().to2DArray();
-
-    // --- ▼ 追加: 各軸に対する「影響の強い項目」トップ3を抽出 ---
-    const variableLoadings = VARIABLES.map((v, i) => ({
-      label: v.label.split(':')[0], // 短い名前だけ取得
-      pc1Weight: loadingsMatrix[i][0],
-      pc2Weight: loadingsMatrix[i][1]
-    }));
-
-    const getTopElements = (key: 'pc1Weight' | 'pc2Weight', asc: boolean) => 
-      [...variableLoadings]
-        .sort((a, b) => asc ? a[key] - b[key] : b[key] - a[key])
-        .slice(0, 3)
-        .map(v => v.label)
-        .join('、');
-
-    const axisData = {
-      pc1Positive: getTopElements('pc1Weight', false),
-      pc1Negative: getTopElements('pc1Weight', true),
-      pc2Positive: getTopElements('pc2Weight', false),
-      pc2Negative: getTopElements('pc2Weight', true),
-    };
-    // -------------------------------------------------------------
-
-    const variableImpacts: VariableImpact[] = VARIABLES.map((v, i) => {
-      const weightPC1 = loadingsMatrix[i][0];
-      const weightPC2 = loadingsMatrix[i][1];
-      
-      const baseImpact = (weightPC1 * directionX) + (weightPC2 * directionY);
-      const roomForImprovement = (100 - scores[v.id]) / 100;
-      const effectiveImpact = baseImpact > 0 ? baseImpact * roomForImprovement : baseImpact;
-      
-      return { id: v.id, label: v.label.split(':')[0], impact: effectiveImpact };
-    });
-
-    variableImpacts.sort((a, b) => b.impact - a.impact);
-    const topAction = variableImpacts[0];
-
-    setPcaResult({ pc1, pc2, action: topAction.label, targetX, targetY });
-    setGradient(variableImpacts.slice(0, 3));
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-
-    // AIアドバイスの取得処理
     setIsGenerating(true);
     setAiAdvice('');
 
-    try {
-      const response = await fetch('/api/advice', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          pc1,
-          pc2,
-          topAction: topAction.label,
-          axisData // 抽出した軸の特徴データを送信
-        })
+    const categoryScores =
+      calculateCategoryScores(scores);
+
+    const currentPosition =
+      calculateCoordinates(categoryScores);
+
+    const targetScores = {
+      ...categoryScores
+    };
+
+    if (selectedGoal === 'Balance') {
+      CATEGORY_IDS.forEach(id => {
+        targetScores[id] = 100;
       });
-      // ▼ APIのレスポンス処理部分を変更
-      const data = await response.json();
-      if (data.advice) {
-        setAiAdvice(data.advice);
-        // 4つの名前をステートにセット
-        setAxisLabels({ 
-          xMinus: data.xMinus || '', 
-          xPlus: data.xPlus || '', 
-          yMinus: data.yMinus || '', 
-          yPlus: data.yPlus || '' 
-        });
-      }
-    } catch (error) {
-      console.error("AI解析に失敗しました");
-      setAiAdvice("エラーが発生しました。もう一度お試しください。");
-    } finally {
-      setIsGenerating(false);
+    } else {
+      targetScores[
+        selectedGoal as CategoryId
+      ] = 100;
     }
+
+    const targetPosition =
+      calculateCoordinates(targetScores);
+
+    const priorities = VARIABLES.map(v => {
+
+      const current = scores[v.id];
+
+      let target = current;
+
+      if (selectedGoal === 'Balance') {
+        target = 100;
+      } else if (
+        v.category === selectedGoal
+      ) {
+        target = 100;
+      }
+
+      return {
+        id: v.id,
+        label: v.label.split(':')[0],
+        impact: Math.max(
+          0,
+          target - current
+        )
+      };
+
+    }).sort((a, b) => b.impact - a.impact);
+
+    const topAction =
+      priorities[0];
+
+    setMapResult({
+      x: currentPosition.x,
+      y: currentPosition.y,
+      targetX: targetPosition.x,
+      targetY: targetPosition.y,
+      action: topAction.label
+    });
+
+    setGradient(
+      priorities.slice(0, 3)
+    );
+
+    window.scrollTo({
+  top: 0,
+  behavior: 'smooth'
+});
+
+try {
+  const response = await fetch('/api/advice', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      categoryScores,
+      coordinates: currentPosition,
+      targetCoordinates: targetPosition,
+      selectedGoal,
+      topAction: topAction.label
+    })
+  });
+
+  const data = await response.json();
+
+  if (data.advice) {
+    setAiAdvice(data.advice);
+  }
+
+} catch (error) {
+
+  console.error(error);
+
+  setAiAdvice(
+    'アドバイスの生成に失敗しました。'
+  );
+
+} finally {
+
+  setIsGenerating(false);
+
+}
   };
 
   // ▼ 追加: グラフクリック時の座標取得処理
@@ -290,7 +303,7 @@ export default function LifeOptimizationApp() {
     datasets: [
       {
         label: '今のあなた（現在地）',
-        data: [{ x: 0, y: 0 }, { x: pcaResult.pc1, y: pcaResult.pc2 }],
+        data: [{ x: 0, y: 0 }, { x: mapResult.x, y: mapResult.y }],
         borderColor: 'rgba(79, 70, 229, 0.4)', 
         backgroundColor: 'rgba(79, 70, 229, 1)',
         borderWidth: 2,
@@ -300,8 +313,8 @@ export default function LifeOptimizationApp() {
       {
         label: '次に目指す方向（おすすめルート）',
         data: [
-          { x: pcaResult.pc1, y: pcaResult.pc2 }, 
-          { x: pcaResult.targetX, y: pcaResult.targetY } // ▼ 変更: 目標地点に線を引く
+          { x: mapResult.x, y: mapResult.y }, 
+          { x: mapResult.targetX, y: mapResult.targetY } // ▼ 変更: 目標地点に線を引く
         ],
         borderColor: 'rgba(236, 72, 153, 1)', 
         borderWidth: 3,
@@ -331,11 +344,11 @@ export default function LifeOptimizationApp() {
           <p className="text-slate-500">人生の多次元パラメーターを評価し、次に打つべき最適解を導き出します。</p>
         </header>
 
-        {pcaResult.action && (
+        {mapResult.action && (
           <div className="space-y-8 animate-fade-in-down">
             <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-2xl p-8 text-white shadow-xl text-center">
               <h2 className="text-lg font-medium opacity-90 mb-2">目的関数を最大化するために、今取り組むべきレバレッジポイントは</h2>
-              <p className="text-4xl font-bold tracking-wider py-4 text-emerald-400">『{pcaResult.action}』</p>
+              <p className="text-4xl font-bold tracking-wider py-4 text-emerald-400">『{mapResult.action}』</p>
               <div className="mt-6 bg-white/10 p-6 rounded-xl text-left border border-white/20 min-h-[120px]">
                 {isGenerating ? (
                   <div className="flex items-center justify-center space-x-2 h-full opacity-70">
@@ -352,20 +365,20 @@ export default function LifeOptimizationApp() {
               </div>
 
               {/* ▼ 追加: アフィリエイト提案エリア */}
-              {!isGenerating && pcaResult.action && AFFILIATE_LINKS[pcaResult.action] && (
+              {!isGenerating && mapResult.action && AFFILIATE_LINKS[mapResult.action] && (
                 <div className="mt-4 p-5 bg-gradient-to-br from-indigo-900 to-slate-800 rounded-xl border border-indigo-500/30 text-left animate-fade-in-up">
                   <p className="text-xs font-bold text-indigo-300 mb-2">💡 このアクションを助けるおすすめツール</p>
                   <a 
-                    href={AFFILIATE_LINKS[pcaResult.action].url} 
+                    href={AFFILIATE_LINKS[mapResult.action].url} 
                     target="_blank" 
                     rel="noopener noreferrer"
                     className="block group"
                   >
                     <h4 className="text-white font-bold group-hover:text-emerald-400 transition-colors">
-                      {AFFILIATE_LINKS[pcaResult.action].title}
+                      {AFFILIATE_LINKS[mapResult.action].title}
                     </h4>
                     <p className="text-sm text-slate-400 mt-1">
-                      {AFFILIATE_LINKS[pcaResult.action].description}
+                      {AFFILIATE_LINKS[mapResult.action].description}
                     </p>
                   </a>
                 </div>
@@ -484,7 +497,7 @@ export default function LifeOptimizationApp() {
             onClick={calculateOptimization}
             className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-8 rounded-full shadow-lg transition-all transform hover:scale-105 active:scale-95"
           >
-            最適化を計算する (Execute PCA)
+            最適化を計算する (Execute Optimization)
           </button>
         </div>
       </div>
