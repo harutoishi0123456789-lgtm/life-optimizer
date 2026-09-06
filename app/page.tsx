@@ -258,6 +258,26 @@ function calculateCoordinates(categoryScores: Record<CategoryId, number>) {
   return { x, y };
 }
 
+function calculateOverallScore(
+  categoryScores: Record<CategoryId, number>
+) {
+  return (
+    CATEGORY_IDS.reduce(
+      (total, categoryId) => total + categoryScores[categoryId],
+      0
+    ) / CATEGORY_IDS.length
+  );
+}
+
+function getTendencyLabel(x: number, y: number) {
+  const horizontal =
+    Math.abs(x) < 5 ? '個人・社会のバランス型' : x > 0 ? '社会資本寄り' : '個人資本寄り';
+  const vertical =
+    Math.abs(y) < 5 ? '思考・実行のバランス型' : y > 0 ? '実行寄り' : '思考寄り';
+
+  return `${horizontal}・${vertical}`;
+}
+
 const AFFILIATE_LINKS: Record<
   string,
   { title: string; description: string; url: string }
@@ -317,6 +337,17 @@ export default function LifeOptimizationApp() {
   const chartRef = useRef<any>(null);
 
   const currentCategoryScores = calculateCategoryScores(scores);
+  const currentOverallScore = calculateOverallScore(currentCategoryScores);
+  const currentCoordinates = calculateCoordinates(currentCategoryScores);
+  const currentTendency = getTendencyLabel(
+    currentCoordinates.x,
+    currentCoordinates.y
+  );
+  const evaluationDate = new Intl.DateTimeFormat('ja-JP', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  }).format(new Date());
 
   const handleSliderChange = (id: string, value: string) => {
     setScores((previousScores) => ({
@@ -467,9 +498,52 @@ export default function LifeOptimizationApp() {
             Life Optimizer
           </h1>
           <p className="text-slate-500">
-            人生の多次元パラメーターを評価し、次に打つべき最適解を導き出します。
+            性格を分類するのではなく、今の生活資本を可視化して、次の一歩を決めます。
+          </p>
+          <p className="mx-auto max-w-2xl text-xs leading-relaxed text-slate-400">
+            この結果は固定的な性格や能力を示すものではありません。
+            現在の生活状態を振り返るための自己評価であり、行動や環境によって変化します。
           </p>
         </header>
+
+        <section className="grid gap-4 md:grid-cols-[1.2fr_1fr]">
+          <div className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-white p-6 shadow-sm">
+            <p className="text-sm font-bold text-indigo-700">現在の総合充実度</p>
+            <div className="mt-3 flex items-end gap-2">
+              <span className="text-5xl font-extrabold text-slate-800">
+                {Math.round(currentOverallScore)}
+              </span>
+              <span className="pb-1 text-sm text-slate-400">/ 100</span>
+            </div>
+            <div className="mt-4 h-3 overflow-hidden rounded-full bg-indigo-100">
+              <div
+                className="h-full rounded-full bg-indigo-600 transition-all duration-300"
+                style={{ width: `${Math.max(0, Math.min(100, currentOverallScore))}%` }}
+              />
+            </div>
+            <p className="mt-3 text-xs leading-relaxed text-slate-500">
+              5資本の単純平均です。高低で人の価値を示すものではなく、
+              現在の生活状態を振り返るための目安です。
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <p className="text-sm font-bold text-slate-700">今回の状態</p>
+            <p className="mt-3 text-lg font-extrabold text-slate-800">
+              {currentTendency}
+            </p>
+            <dl className="mt-4 space-y-2 text-xs text-slate-500">
+              <div className="flex justify-between gap-4">
+                <dt>評価日</dt>
+                <dd className="font-medium text-slate-700">{evaluationDate}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt>推奨再評価</dt>
+                <dd className="font-medium text-slate-700">1〜2週間後</dd>
+              </div>
+            </dl>
+          </div>
+        </section>
 
         <section className="space-y-4">
           <div>
@@ -518,11 +592,25 @@ export default function LifeOptimizationApp() {
           <div className="animate-fade-in-down space-y-8">
             <div className="rounded-2xl bg-gradient-to-r from-slate-800 to-slate-900 p-8 text-center text-white shadow-xl">
               <h2 className="mb-2 text-lg font-medium opacity-90">
-                目標へ近づくために、今取り組むべき優先アクションは
+                今週の改善プランで、最初に取り組むアクションは
               </h2>
               <p className="py-4 text-4xl font-bold tracking-wider text-emerald-400">
                 『{mapResult.action}』
               </p>
+              <div className="mx-auto grid max-w-xl grid-cols-3 gap-2 text-left text-xs">
+                <div className="rounded-lg bg-white/10 p-3">
+                  <p className="text-slate-400">期間</p>
+                  <p className="mt-1 font-bold text-white">まず7日間</p>
+                </div>
+                <div className="rounded-lg bg-white/10 p-3">
+                  <p className="text-slate-400">進め方</p>
+                  <p className="mt-1 font-bold text-white">小さく1つ</p>
+                </div>
+                <div className="rounded-lg bg-white/10 p-3">
+                  <p className="text-slate-400">再評価</p>
+                  <p className="mt-1 font-bold text-white">1〜2週間後</p>
+                </div>
+              </div>
 
               <div className="mt-6 min-h-[120px] rounded-xl border border-white/20 bg-white/10 p-6 text-left">
                 {isGenerating ? (
@@ -574,10 +662,10 @@ export default function LifeOptimizationApp() {
             <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
               <div className="h-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <h3 className="mb-2 text-lg font-bold text-slate-800">
-                  あなたの人生ステータスマップ
+                  ライフスタイル傾向マップ
                 </h3>
                 <p className="text-xs text-slate-500">
-                  横軸は個人資本から社会資本、縦軸は思考から実行への傾向を表します。
+                  横軸は個人資本から社会資本、縦軸は思考から実行への現在の傾向です。性格タイプの判定ではありません。
                 </p>
 
                 <div className="relative mb-4 mt-8">
@@ -661,7 +749,7 @@ export default function LifeOptimizationApp() {
           </div>
 
           <h2 className="text-center text-2xl font-bold text-slate-700">
-            現在のパラメーターを入力
+            現在の生活状態を振り返る
           </h2>
 
           {CATEGORIES.map((category) => (
@@ -717,7 +805,7 @@ export default function LifeOptimizationApp() {
             disabled={isGenerating}
             className="rounded-full bg-indigo-600 px-8 py-3 font-bold text-white shadow-lg transition-all hover:scale-105 hover:bg-indigo-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {isGenerating ? '計算中...' : '人生最適化を計算する'}
+            {isGenerating ? '計算中...' : '今週の改善プランを作る'}
           </button>
         </div>
       </div>
